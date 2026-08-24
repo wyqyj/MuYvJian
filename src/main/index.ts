@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, Notification, screen, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, Notification, safeStorage, screen, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -26,6 +26,8 @@ interface AppStore {
   todayPlanBounds?: { x: number; y: number; width: number; height: number };
   todayPlanOpacity?: number;
   initialized?: boolean;
+  aiConfig?: { baseUrl: string; model: string };
+  encryptedAiApiKey?: string;
 }
 
 const store = new Store<AppStore>({
@@ -38,19 +40,106 @@ const store = new Store<AppStore>({
   },
 });
 
+type AiAction = 'summarize' | 'outline' | 'review-cards' | 'rewrite';
+type AiPublicConfig = { baseUrl: string; model: string; configured: boolean; secureStorageAvailable: boolean };
+
+const aiRequests = new Map<string, AbortController>();
+const defaultAiConfig = { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4.1-mini' };
+
+function getAiConfig(): AiPublicConfig {
+  const saved = store.get('aiConfig');
+  const config = { ...defaultAiConfig, ...saved };
+  return { ...config, configured: Boolean(store.get('encryptedAiApiKey')), secureStorageAvailable: safeStorage.isEncryptionAvailable() };
+}
+
+function decryptAiApiKey(): string {
+  const encrypted = store.get('encryptedAiApiKey');
+  if (!encrypted) throw new Error('请先在 AI 设置中保存 API Key');
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('当前系统安全存储不可用，无法读取 API Key');
+  return safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
+}
+
+function validateAiBaseUrl(value: string): string {
+  const url = new URL(value);
+  const isLocal = url.protocol === 'http:' && ['localhost', '127.0.0.1', '::1'].includes(url.hostname);
+  if (url.protocol !== 'https:' && !isLocal) throw new Error('AI Base URL 必须使用 HTTPS；仅本地模型允许 HTTP');
+  return url.toString().replace(/\/$/, '');
+}
+
+function aiInstructions(action: AiAction): string {
+  const common = '你是暮雨笺中的学习与写作助手。仅依据用户提供的文本作答；使用简体中文和 Markdown；不要捏造资料、引用或事实。';
+  const actions: Record<AiAction, string> = {
+    summarize: '提炼结构化摘要，包含核心观点、关键细节和待确认项。',
+    outline: '整理为层级清晰的 Markdown 提纲，保留原意，不添加无依据内容。',
+    'review-cards': '生成可复习的问答卡片。每张使用“## 问题”和“答案”两行，覆盖关键概念而不重复。',
+    rewrite: '在不改变事实和立场的前提下润色文字，使表达清晰、简练、适合笔记阅读。',
+  };
+  return `${common}\n\n任务：${actions[action]}`;
+}
+
+function parseSseEvents(buffer: string, onDelta: (delta: string) => void): string {
+  const events = buffer.split(/\r?\n\r?\n/);
+  const remaining = events.pop() || '';
+  for (const event of events) {
+    const type = event.match(/^event:\s*(.+)$/m)?.[1]?.trim();
+    const payload = event.match(/^data:\s*(.+)$/m)?.[1]?.trim();
+    if (type !== 'response.output_text.delta' || !payload || payload === '[DONE]') continue;
+    try {
+      const parsed = JSON.parse(payload);
+      if (typeof parsed.delta === 'string') onDelta(parsed.delta);
+    } catch { /* Ignore incomplete or provider-specific events. */ }
+  }
+  return remaining;
+}
+
+async function requestAi(sender: Electron.WebContents, requestId: string, action: AiAction, content: string): Promise<void> {
+  const controller = new AbortController();
+  aiRequests.set(requestId, controller);
+  try {
+    const config = getAiConfig();
+    const apiKey = decryptAiApiKey();
+    const response = await fetch(`${validateAiBaseUrl(config.baseUrl)}/responses`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      body: JSON.stringify({ model: config.model, instructions: aiInstructions(action), input: content, stream: true, max_output_tokens: 2400 }),
+    });
+    if (!response.ok || !response.body) {
+      const detail = (await response.text()).slice(0, 500);
+      throw new Error(`AI 请求失败（${response.status}）：${detail || response.statusText}`);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let pending = '';
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      pending = parseSseEvents(pending + decoder.decode(next.value, { stream: true }), (delta) => sender.send('ai-stream', { requestId, delta }));
+    }
+    parseSseEvents(pending + decoder.decode(), (delta) => sender.send('ai-stream', { requestId, delta }));
+    sender.send('ai-stream', { requestId, done: true });
+  } catch (error: any) {
+    sender.send('ai-stream', { requestId, done: true, error: error?.name === 'AbortError' ? '已取消生成。' : (error?.message || 'AI 请求失败') });
+  } finally {
+    aiRequests.delete(requestId);
+  }
+}
+
 function readUpdateNotices(): string {
   try { return fs.readFileSync(updateNoticesPath, 'utf-8'); }
   catch { return '# 暮雨笺更新告示\n\n未能读取内置更新记录，请在项目根目录查看 UPDATE_NOTICES.md。'; }
 }
 
-function createInitialNotes(): void {
+function createInitialNotes(): boolean {
   try {
-    if (store.get('initialized')) return;
-    const notesPath = path.join(dataDir, 'notes.json');
+    // 预置笔记属于可迁移的工作台数据，不能写入 electron-store 所在的旧数据目录。
+    const notesPath = path.join(workspaceStorage.getRoot(), 'notes.json');
     let notes: any[] = [];
     try { if (fs.existsSync(notesPath)) notes = JSON.parse(fs.readFileSync(notesPath, 'utf-8')); } catch {}
-    if (notes.length > 0) { store.set('initialized', true); return; }
-    store.set('initialized', true);
+    if (notes.length > 0) {
+      store.set('initialized', true);
+      return true;
+    }
     const now = Date.now();
     const initialNotes = [
       {
@@ -189,7 +278,12 @@ $$e^x = \\sum_{n=0}^{\\infty} \\frac{x^n}{n!} = 1 + x + \\frac{x^2}{2!} + \\frac
     ];
     notes.unshift(...initialNotes);
     fs.writeFileSync(notesPath, JSON.stringify(notes, null, 2), 'utf-8');
-  } catch (err) { console.error('创建预置笔记失败:', err); }
+    store.set('initialized', true);
+    return true;
+  } catch (err) {
+    console.error('创建预置笔记失败:', err);
+    return false;
+  }
 }
 
 let mainWindow: BrowserWindow | null = null;
@@ -377,6 +471,58 @@ function createTimerStatsWindow(): void {
 }
 
 function setupIPC(): void {
+  ipcMain.handle('ai-get-config', () => getAiConfig());
+  ipcMain.handle('ai-save-config', (_e: any, value: unknown) => {
+    try {
+      if (!value || typeof value !== 'object') throw new Error('AI 配置无效');
+      const input = value as { baseUrl?: unknown; model?: unknown; apiKey?: unknown; clearApiKey?: unknown };
+      const current = getAiConfig();
+      const baseUrl = validateAiBaseUrl(typeof input.baseUrl === 'string' ? input.baseUrl.trim() : current.baseUrl);
+      const model = typeof input.model === 'string' ? input.model.trim() : current.model;
+      if (!model || model.length > 120) throw new Error('模型名称无效');
+      if (input.clearApiKey === true) store.delete('encryptedAiApiKey');
+      if (typeof input.apiKey === 'string' && input.apiKey.trim()) {
+        if (!safeStorage.isEncryptionAvailable()) throw new Error('当前系统安全存储不可用，无法保存 API Key');
+        store.set('encryptedAiApiKey', safeStorage.encryptString(input.apiKey.trim()).toString('base64'));
+      }
+      store.set('aiConfig', { baseUrl, model });
+      return { success: true, config: getAiConfig() };
+    } catch (error: any) { return { success: false, error: error?.message || '保存 AI 配置失败' }; }
+  });
+  ipcMain.handle('ai-test-connection', async () => {
+    try {
+      const config = getAiConfig();
+      const apiKey = decryptAiApiKey();
+      const response = await fetch(`${validateAiBaseUrl(config.baseUrl)}/responses`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: config.model, input: 'Reply with OK.', max_output_tokens: 16 }),
+      });
+      if (!response.ok) throw new Error((await response.text()).slice(0, 500) || `HTTP ${response.status}`);
+      return { success: true };
+    } catch (error: any) { return { success: false, error: error?.message || '连接测试失败' }; }
+  });
+  ipcMain.handle('ai-start', (event: Electron.IpcMainInvokeEvent, value: unknown) => {
+    try {
+      if (!value || typeof value !== 'object') throw new Error('AI 请求无效');
+      const input = value as { action?: unknown; content?: unknown };
+      const action = input.action;
+      const content = input.content;
+      if (!['summarize', 'outline', 'review-cards', 'rewrite'].includes(String(action))) throw new Error('不支持的 AI 操作');
+      if (typeof content !== 'string' || !content.trim()) throw new Error('没有可供整理的笔记内容');
+      if (content.length > 100_000) throw new Error('单次最多整理 100,000 个字符，请先选择或拆分内容');
+      const requestId = `ai-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      void requestAi(event.sender, requestId, action as AiAction, content);
+      return { success: true, requestId };
+    } catch (error: any) { return { success: false, error: error?.message || '启动 AI 请求失败' }; }
+  });
+  ipcMain.handle('ai-cancel', (_e: any, requestId: unknown) => {
+    if (typeof requestId !== 'string') return false;
+    const controller = aiRequests.get(requestId);
+    if (!controller) return false;
+    controller.abort();
+    return true;
+  });
   ipcMain.handle('workspace-get-state', () => workspaceStorage.readState());
   ipcMain.handle('workspace-save-state', (_e: any, state: string) => workspaceStorage.writeState(state));
   ipcMain.handle('workspace-reset', () => {
@@ -388,7 +534,9 @@ function setupIPC(): void {
       todayPlanOpacity: 1,
       initialized: false,
     };
-    createInitialNotes();
+    if (!createInitialNotes()) {
+      return { ...result, success: false, error: '工作台已清空，但预置笔记创建失败。请检查当前数据目录的写入权限后重试初始化。' };
+    }
     for (const win of quickNoteWindows.splice(0)) {
       if (!win.isDestroyed()) win.destroy();
     }
@@ -399,7 +547,14 @@ function setupIPC(): void {
   });
   ipcMain.handle('workspace-get-root', () => workspaceStorage.getRoot());
   ipcMain.handle('workspace-choose-root', () => workspaceStorage.chooseRoot(BrowserWindow.getFocusedWindow()));
-  ipcMain.handle('workspace-migrate', (_e: any, destination: string) => workspaceStorage.migrate(destination));
+  ipcMain.handle('workspace-migrate', (_e: any, destination: string) => {
+    const result = workspaceStorage.migrate(destination);
+    if (result.success) {
+      dataDir = workspaceStorage.getRoot();
+      store.set('settings', { ...store.get('settings'), dataPath: dataDir });
+    }
+    return result;
+  });
   ipcMain.handle('workspace-backup', () => workspaceStorage.createBackup(BrowserWindow.getFocusedWindow()));
   ipcMain.handle('workspace-restore', () => workspaceStorage.restoreBackup(BrowserWindow.getFocusedWindow()));
   ipcMain.handle('workspace-choose-question-book', () => workspaceStorage.chooseQuestionBook(BrowserWindow.getFocusedWindow()));
@@ -544,7 +699,7 @@ function setupIPC(): void {
   ipcMain.on('select-note', (_e: any, noteId: string) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('select-note', noteId);
   });
-  ipcMain.handle('get-data-path', () => dataDir);
+  ipcMain.handle('get-data-path', () => workspaceStorage.getRoot());
   ipcMain.handle('export-data', () => {
     let notes: unknown = [];
     let timerRecords: unknown = { records: [] };

@@ -63,6 +63,12 @@ interface ElectronAPI {
   getQuestionBookSkill: () => Promise<{ success: boolean; directory?: string; skillPath?: string; promptPath?: string; prompt?: string; error?: string }>;
   getPlanImportSkill: () => Promise<{ success: boolean; directory?: string; skillPath?: string; promptPath?: string; prompt?: string; error?: string }>;
   notifyWorkspace: (title: string, body: string) => Promise<boolean>;
+  getAiConfig: () => Promise<{ baseUrl: string; model: string; configured: boolean; secureStorageAvailable: boolean }> ;
+  saveAiConfig: (config: { baseUrl: string; model: string; apiKey?: string; clearApiKey?: boolean }) => Promise<{ success: boolean; config?: { baseUrl: string; model: string; configured: boolean; secureStorageAvailable: boolean }; error?: string }> ;
+  testAiConnection: () => Promise<{ success: boolean; error?: string }> ;
+  startAi: (request: { action: 'summarize' | 'outline' | 'review-cards' | 'rewrite'; content: string }) => Promise<{ success: boolean; requestId?: string; error?: string }> ;
+  cancelAi: (requestId: string) => Promise<boolean>;
+  onAiStream: (callback: (event: { requestId: string; delta?: string; done?: boolean; error?: string }) => void) => () => void;
 }
 
 interface Window {

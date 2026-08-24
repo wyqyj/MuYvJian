@@ -35,6 +35,14 @@ declare module 'electron' {
     getPath(name: string): string;
   };
 
+  export interface WebContents {
+    send(channel: string, ...args: any[]): void;
+  }
+
+  export interface IpcMainInvokeEvent {
+    sender: WebContents;
+  }
+
   export const ipcMain: {
     on(channel: string, listener: (event: any, ...args: any[]) => void): void;
     handle(channel: string, listener: (event: any, ...args: any[]) => any): void;
@@ -67,6 +75,11 @@ declare module 'electron' {
   };
   export const shell: any;
   export const dialog: any;
+  export const safeStorage: {
+    isEncryptionAvailable(): boolean;
+    encryptString(value: string): Buffer;
+    decryptString(value: Buffer): string;
+  };
 }
 
 declare module 'html-to-docx' {

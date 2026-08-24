@@ -82,4 +82,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getQuestionBookSkill: () => ipcRenderer.invoke('workspace-question-book-skill'),
   getPlanImportSkill: () => ipcRenderer.invoke('workspace-plan-skill'),
   notifyWorkspace: (title: string, body: string) => ipcRenderer.invoke('workspace-notify', title, body),
+  getAiConfig: () => ipcRenderer.invoke('ai-get-config'),
+  saveAiConfig: (config: { baseUrl: string; model: string; apiKey?: string; clearApiKey?: boolean }) => ipcRenderer.invoke('ai-save-config', config),
+  testAiConnection: () => ipcRenderer.invoke('ai-test-connection'),
+  startAi: (request: { action: 'summarize' | 'outline' | 'review-cards' | 'rewrite'; content: string }) => ipcRenderer.invoke('ai-start', request),
+  cancelAi: (requestId: string) => ipcRenderer.invoke('ai-cancel', requestId),
+  onAiStream: (callback: (event: { requestId: string; delta?: string; done?: boolean; error?: string }) => void) => {
+    const listener = (_event: unknown, value: { requestId: string; delta?: string; done?: boolean; error?: string }) => callback(value);
+    ipcRenderer.on('ai-stream', listener);
+    return () => ipcRenderer.removeListener('ai-stream', listener);
+  },
 });

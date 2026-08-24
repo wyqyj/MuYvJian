@@ -10,6 +10,9 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useAutoSave } from '../utils/useAutoSave';
 import { VersionHistory } from './VersionHistory';
 
+type AiAction = 'summarize' | 'outline' | 'review-cards' | 'rewrite';
+const aiActionLabels: Record<AiAction, string> = { summarize: '摘要', outline: '提纲', 'review-cards': '复习卡片', rewrite: '润色' };
+
 /** 将文件转为 base64 data URL */
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -37,6 +40,12 @@ export const Editor: React.FC = () => {
   const { notes, activeNoteId, updateNote, updateContent, setActiveNoteId } = useNoteStore();
   const { t } = useSettingsStore();
   const [showHistory, setShowHistory] = useState(false);
+  const [showAi, setShowAi] = useState(false);
+  const [aiRequestId, setAiRequestId] = useState<string | null>(null);
+  const [aiResult, setAiResult] = useState('');
+  const [aiError, setAiError] = useState('');
+  const [aiAction, setAiAction] = useState<AiAction>('summarize');
+  const aiSelectionRef = useRef<{ from: number; to: number }>({ from: 0, to: 0 });
 
   const activeNote = notes.find((n) => n.id === activeNoteId);
   const backlinks = useMemo(() => activeNote ? notes.filter((note) => note.id !== activeNote.id && !note.isDeleted && (
@@ -128,6 +137,52 @@ export const Editor: React.FC = () => {
   const handleLink = () => viewRef.current && wrapSelection(viewRef.current, '[', '](url)');
   const handleList = () => viewRef.current && insertAtCursor(viewRef.current, '- ');
   const handleImage = () => fileInputRef.current?.click();
+
+  useEffect(() => {
+    if (!window.electronAPI?.onAiStream) return;
+    return window.electronAPI.onAiStream((event) => {
+      if (event.requestId !== aiRequestId) return;
+      if (event.delta) setAiResult((current) => current + event.delta);
+      if (event.done) {
+        setAiRequestId(null);
+        if (event.error) setAiError(event.error);
+      }
+    });
+  }, [aiRequestId]);
+
+  const runAi = async (action: AiAction) => {
+    if (!activeNote || !viewRef.current) return;
+    const { from, to } = viewRef.current.state.selection.main;
+    const selected = viewRef.current.state.sliceDoc(from, to);
+    const content = selected.trim() || activeNote.content.trim();
+    if (!content) { setAiError('请先输入或选择需要整理的笔记内容。'); return; }
+    aiSelectionRef.current = { from, to };
+    setAiAction(action);
+    setAiResult('');
+    setAiError('');
+    const result = await window.electronAPI?.startAi({ action, content });
+    if (!result?.success || !result.requestId) {
+      setAiError(result?.error || '无法启动 AI 整理。请先在外观面板完成 AI 设置。');
+      return;
+    }
+    setAiRequestId(result.requestId);
+  };
+
+  const insertAiResult = (mode: 'cursor' | 'append' | 'replace') => {
+    const view = viewRef.current;
+    if (!view || !aiResult.trim()) return;
+    const range = aiSelectionRef.current;
+    if (mode === 'append') {
+      const at = view.state.doc.length;
+      view.dispatch({ changes: { from: at, insert: `${at ? '\n\n' : ''}${aiResult.trim()}\n` }, selection: { anchor: at + aiResult.trim().length } });
+    } else if (mode === 'replace' && range.from !== range.to) {
+      view.dispatch({ changes: { from: range.from, to: range.to, insert: aiResult.trim() }, selection: { anchor: range.from, head: range.from + aiResult.trim().length } });
+    } else {
+      insertAtCursor(view, aiResult.trim());
+    }
+    setAiResult('');
+    setShowAi(false);
+  };
 
   useEffect(() => {
     if (!editorRef.current || !activeNote) return;
@@ -264,8 +319,17 @@ export const Editor: React.FC = () => {
         <button onClick={handleImage} className="toolbar-btn" title="插入图片">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
         </button>
+        <button onClick={() => { setShowAi((visible) => !visible); setAiError(''); }} className="toolbar-btn" title="AI 整理笔记" aria-label="AI 整理笔记">
+          <span className="text-xs font-semibold">AI</span>
+        </button>
         <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileSelect} className="hidden" />
       </div>
+      {showAi && <section className="border-b border-indigo-100 bg-indigo-50/60 px-4 py-3 dark:border-indigo-900/40 dark:bg-indigo-950/20" aria-label="AI 笔记整理">
+        <div className="flex items-center justify-between gap-3"><div><strong className="text-sm text-indigo-950 dark:text-indigo-100">AI 笔记整理</strong><p className="mt-0.5 text-xs text-indigo-700 dark:text-indigo-300">优先整理当前选区；未选择时整理整篇笔记。内容仅在本次操作中发送至已配置的服务。</p></div><button className="toolbar-btn" onClick={() => { if (aiRequestId) void window.electronAPI?.cancelAi(aiRequestId); setShowAi(false); }} title="关闭" aria-label="关闭 AI 整理">×</button></div>
+        <div className="mt-2 flex flex-wrap gap-2">{(Object.keys(aiActionLabels) as AiAction[]).map((action) => <button key={action} disabled={Boolean(aiRequestId)} onClick={() => void runAi(action)} className={`rounded px-2 py-1 text-xs ${aiAction === action ? 'bg-indigo-600 text-white' : 'bg-white text-indigo-700 hover:bg-indigo-100 dark:bg-gray-800 dark:text-indigo-200'}`}>{aiActionLabels[action]}</button>)}{aiRequestId && <button onClick={() => void window.electronAPI?.cancelAi(aiRequestId)} className="rounded px-2 py-1 text-xs text-rose-700 hover:bg-rose-100 dark:text-rose-300">停止生成</button>}</div>
+        {aiError && <p className="mt-2 text-xs text-rose-700 dark:text-rose-300">{aiError}</p>}
+        {(aiResult || aiRequestId) && <div className="mt-3"><textarea readOnly value={aiResult || '正在生成…'} className="min-h-40 w-full resize-y rounded border border-indigo-200 bg-white p-3 font-mono text-xs leading-5 text-gray-800 outline-none dark:border-indigo-900/50 dark:bg-gray-900 dark:text-gray-100" aria-label="AI 生成结果预览" />{!aiRequestId && aiResult && <div className="mt-2 flex flex-wrap gap-2"><button onClick={() => insertAiResult('cursor')} className="rounded bg-indigo-600 px-2 py-1 text-xs text-white hover:bg-indigo-700">插入光标处</button><button onClick={() => insertAiResult('append')} className="rounded border border-indigo-200 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:text-indigo-200">追加到笔记</button>{aiSelectionRef.current.from !== aiSelectionRef.current.to && <button onClick={() => insertAiResult('replace')} className="rounded border border-indigo-200 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:text-indigo-200">替换原选区</button>}</div>}</div>}
+      </section>}
 
       {/* 编辑器（支持拖拽图片） */}
       <div ref={editorRef} className="editor-surface flex-1 overflow-hidden"

@@ -2,7 +2,7 @@
 setlocal EnableExtensions
 chcp 65001 >nul 2>nul
 cd /d "%~dp0"
-title 暮雨笺 v3.0.6 - 发布打包
+title 暮雨笺 v3.0.7 - 发布打包
 
 :: 检查 Node.js 是否可用
 where node >nul 2>nul
@@ -63,7 +63,7 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo [3/3] 正在生成 v3.0.6 安装包...
+echo [3/3] 正在生成 v3.0.7 安装包...
 if exist "release-temp" rmdir /s /q "release-temp"
 call npx electron-builder --win --publish never --config.directories.output=release-temp
 if %errorlevel% neq 0 (
