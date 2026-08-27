@@ -162,7 +162,7 @@ export const Editor: React.FC = () => {
     setAiError('');
     const result = await window.electronAPI?.startAi({ action, content });
     if (!result?.success || !result.requestId) {
-      setAiError(result?.error || '无法启动 AI 整理。请先在外观面板完成 AI 设置。');
+      setAiError(result?.error || '无法启动 AI 整理。请先打开“AI 设置”完成接口配置。');
       return;
     }
     setAiRequestId(result.requestId);

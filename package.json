@@ -1,6 +1,6 @@
 {
   "name": "muyujian",
-  "version": "3.0.7",
+  "version": "3.0.8",
   "description": "暮雨笺：本地优先的笔记与考研学习工作台",
   "repository": {
     "type": "git",
@@ -79,11 +79,8 @@
     ],
     "extraResources": [
       {
-        "from": "resources/pandoc/",
-        "to": "pandoc/",
-        "filter": [
-          "**/*"
-        ]
+        "from": "resources/pandoc/pandoc.exe",
+        "to": "pandoc/pandoc.exe"
       },
       {
         "from": "examples/workbench/",

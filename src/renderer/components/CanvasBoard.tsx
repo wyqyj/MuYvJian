@@ -62,6 +62,15 @@ const templates: Record<string, { label: string; items: Omit<CanvasItem, 'id'>[]
   ] },
 };
 
+const CanvasImage: React.FC<{ src?: string }> = ({ src }) => {
+  const [state, setState] = useState<'loading' | 'loaded' | 'error'>('loading');
+  useEffect(() => { setState('loading'); }, [src]);
+  return <>
+    {state !== 'loaded' && <div className="canvas-image-placeholder" aria-hidden="true">{state === 'error' ? <span>图片加载失败</span> : <svg className="canvas-image-loading" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="9" /></svg>}</div>}
+    {state !== 'error' && <img src={src} alt="画布图片" draggable={false} onLoad={() => setState('loaded')} onError={() => setState('error')} aria-busy={state === 'loading'} />}
+  </>;
+};
+
 export const CanvasBoard: React.FC<{ note: Note }> = ({ note }) => {
   const { notes, updateNote, setActiveNoteId } = useNoteStore();
   const { attachments, addAttachment } = useAttachmentStore();
@@ -378,8 +387,8 @@ export const CanvasBoard: React.FC<{ note: Note }> = ({ note }) => {
           {visibleItems.map((item) => {
             const linkedNote = item.type === 'note' ? notes.find((entry) => entry.id === item.content) : undefined;
             const imageSource = item.attachmentId ? attachments.find((attachment) => attachment.id === item.attachmentId)?.dataUrl || item.content : item.content;
-            return <div key={item.id} data-canvas-item className={`canvas-item ${item.type} ${selectedId === item.id ? 'selected' : ''} ${connectorFrom === item.id ? 'link-source' : ''}`} style={{ transform: `translate(${item.x}px, ${item.y}px)`, width: item.width, height: itemHeight(item) }} onPointerDown={(event) => handleItemPointerDown(event, item)} onContextMenu={(event) => handleContextMenu(event, item)} onDoubleClick={(event) => { if (item.type === 'note' && linkedNote) openNoteInspector(item, linkedNote); else if (!(event.target instanceof HTMLTextAreaElement)) focusItem(item); }}>
-              {item.type === 'image' ? <img src={imageSource} alt="画布图片" draggable={false} /> : item.type === 'note' ? <button className="canvas-note-card" onDoubleClick={(event) => { event.stopPropagation(); if (linkedNote) openNoteInspector(item, linkedNote); }}><span>{linkedNote?.noteType === 'todo' ? '待办' : '笔记'}</span><strong>{linkedNote?.title || '已删除的笔记'}</strong><p>{linkedNote?.content.replace(/[#*\[\]`~>_-]/g, '').replace(/\n+/g, ' ').slice(0, 72) || '双击在右侧打开笔记'}</p></button> : editingTextId === item.id ? <textarea autoFocus value={item.content} onPointerDown={(event) => event.stopPropagation()} onBlur={() => setEditingTextId(null)} onChange={(event) => updateItem(item.id, { content: event.target.value })} style={{ color: item.color || '#1e293b' }} aria-label="编辑画布文本" /> : <div className="canvas-text-preview" style={{ color: item.color || '#1e293b' }} onDoubleClick={(event) => { event.stopPropagation(); setEditingTextId(item.id); }} dangerouslySetInnerHTML={{ __html: renderMarkdown(item.content) }} />}
+            return <div key={item.id} data-canvas-item className={`canvas-item ${item.type} ${selectedId === item.id ? 'selected' : ''} ${connectorFrom === item.id ? 'link-source' : ''}`} style={{ transform: `translate(${item.x}px, ${item.y}px)`, width: item.width, height: itemHeight(item) }} onPointerDown={(event) => handleItemPointerDown(event, item)} onContextMenu={(event) => handleContextMenu(event, item)}>
+              {item.type === 'image' ? <CanvasImage src={imageSource} /> : item.type === 'note' ? <button className="canvas-note-card" onClick={(event) => { event.stopPropagation(); if (linkedNote) openNoteInspector(item, linkedNote); }}><span>{linkedNote?.noteType === 'todo' ? '待办' : '笔记'}</span><strong>{linkedNote?.title || '已删除的笔记'}</strong><p>{linkedNote?.content.replace(/[#*\[\]`~>_-]/g, '').replace(/\n+/g, ' ').trim().slice(0, 72) || '点击在右侧打开笔记'}</p></button> : editingTextId === item.id ? <textarea autoFocus value={item.content} onPointerDown={(event) => event.stopPropagation()} onBlur={() => setEditingTextId(null)} onChange={(event) => updateItem(item.id, { content: event.target.value })} style={{ color: item.color || '#1e293b' }} aria-label="编辑画布文本" /> : <div className="canvas-text-preview" style={{ color: item.color || '#1e293b' }} onDoubleClick={(event) => { event.stopPropagation(); setEditingTextId(item.id); }} dangerouslySetInnerHTML={{ __html: renderMarkdown(item.content) }} />}
               {selectedId === item.id && <><div className="canvas-item-handle" onPointerDown={(event) => event.stopPropagation()}><button onClick={() => resizeSelected('width', -24)} title="缩窄">←</button><button onClick={() => resizeSelected('width', 24)} title="加宽">→</button><button onClick={() => resizeSelected('height', -20)} title="降低">↓</button><button onClick={() => resizeSelected('height', 20)} title="增高">↑</button><button onClick={() => focusItem(item)} title="居中适配">◎</button>{item.type === 'note' && linkedNote && <button onClick={() => openNoteInspector(item, linkedNote)} title="打开关联笔记">□</button>}</div><button className="canvas-resize-handle" onPointerDown={(event) => handleResizePointerDown(event, item)} aria-label="拖拽调整元素宽高" title="拖拽调整大小" /></>}
             </div>;
           })}

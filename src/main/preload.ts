@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  // 应用版本
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   // 快速笔记
   getQuickNote: () => ipcRenderer.invoke('get-quick-note'),
   saveQuickNote: (content: string) => ipcRenderer.send('save-quick-note', content),

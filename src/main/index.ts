@@ -471,6 +471,7 @@ function createTimerStatsWindow(): void {
 }
 
 function setupIPC(): void {
+  ipcMain.handle('get-app-version', () => app.getVersion());
   ipcMain.handle('ai-get-config', () => getAiConfig());
   ipcMain.handle('ai-save-config', (_e: any, value: unknown) => {
     try {

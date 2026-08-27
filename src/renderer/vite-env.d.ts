@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ElectronAPI {
+  getAppVersion: () => Promise<string>;
   getQuickNote: () => Promise<string>;
   saveQuickNote: (content: string) => void;
   getSettings: () => Promise<Record<string, unknown>>;

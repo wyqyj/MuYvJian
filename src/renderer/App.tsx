@@ -251,8 +251,8 @@ const App: React.FC = () => {
           {!showWorkbench && <button onClick={() => setShowAssets(true)} className="p-1 rounded hover:bg-emerald-50 dark:hover:bg-gray-800 text-gray-400 transition-colors" title="素材库">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}><path strokeLinecap="round" strokeLinejoin="round" d="M4 5h16v14H4zM4 9h16M8 13h.01M7 17l3-3 2 2 3-3 2 4" /></svg>
           </button>}
-          {!showWorkbench && <button onClick={() => setShowAppearance(true)} className="p-1 rounded hover:bg-indigo-50 dark:hover:bg-gray-800 text-gray-400 transition-colors" title="外观与壁纸">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4h16v16H4zM4 10h16M10 4v16" /></svg>
+          {!showWorkbench && <button onClick={() => setShowAppearance(true)} className="flex items-center gap-1 px-2 py-1 rounded hover:bg-indigo-50 dark:hover:bg-gray-800 text-indigo-500 transition-colors" title="AI 设置、外观与预览">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v3m0 12v3M3 12h3m12 0h3m-4.2-6.8l-2.1 2.1m-7.4 7.4l-2.1 2.1m0-11.6l2.1 2.1m7.4 7.4l2.1 2.1M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0z" /></svg><span className="hidden xl:inline text-[11px]">AI 设置</span>
           </button>}
           {!showWorkbench && <button onClick={() => setShowCommandPalette(true)} className="px-2 py-1 rounded text-[11px] bg-slate-50 dark:bg-gray-800 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors" title="命令面板 (Ctrl+K)">Ctrl K</button>}
 

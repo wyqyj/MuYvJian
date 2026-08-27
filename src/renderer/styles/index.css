@@ -322,7 +322,16 @@ body {
 .canvas-text-preview p, .canvas-text-preview h1, .canvas-text-preview h2, .canvas-text-preview h3 { margin: 0 0 8px; }
 .canvas-text-preview .katex-block { margin: 8px 0; overflow-x: auto; overflow-y: hidden; }
 .canvas-item.image, .canvas-item.note { overflow: visible; background: #fff; box-shadow: 0 7px 18px rgba(30, 41, 59, .13); }
+.canvas-item.note { transition: box-shadow .15s ease, border-color .15s ease, transform .1s ease; }
+.canvas-item.note:hover { border-color: #c7d2fe; box-shadow: 0 9px 22px rgba(79,70,229,.16); }
+.canvas-item.note.selected { border-color: #6366f1; }
+.dark .canvas-item.note:hover { border-color: #6366f1; }
 .canvas-item.image img { display: block; width: 100%; height: 100%; border-radius: inherit; object-fit: contain; pointer-events: none; }
+.canvas-image-placeholder { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; border-radius: inherit; background: #f1f5f9; color: #94a3b8; }
+.canvas-image-placeholder span { font-size: 11px; }
+.canvas-image-loading { animation: canvasSpin 1s linear infinite; color: #a5b4fc; }
+@keyframes canvasSpin { to { transform: rotate(360deg); } }
+.dark .canvas-image-placeholder { background: #1e293b; color: #64748b; }
 .canvas-item.link-source { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.2); }
 .canvas-note-card { width: 100%; height: 100%; max-height: 100%; overflow-y: auto; overscroll-behavior: contain; padding: 13px; border: 0; background: transparent; color: #334155; text-align: left; cursor: pointer; }
 .canvas-note-card span { display: block; margin-bottom: 5px; color: #6366f1; font-size: 10px; font-weight: 600; }
@@ -402,6 +411,22 @@ body {
 .kanban-card { margin-bottom: 9px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; box-shadow: 0 2px 7px rgba(15,23,42,.05); cursor: grab; }
 .kanban-card:active { cursor: grabbing; }
 .kanban-card:hover { border-color: #c7d2fe; box-shadow: 0 5px 13px rgba(79,70,229,.09); }
+.kanban-card.complete { opacity: .62; }
+.kanban-card.complete .kanban-card-title { color: #94a3b8; text-decoration: line-through; }
+.kanban-card.complete p { color: #cbd5e1; }
+.kanban-progress { height: 4px; overflow: hidden; margin: 7px 0 8px; border-radius: 4px; background: #eef2f7; }
+.kanban-progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #818cf8, #6366f1); transition: width .25s ease; }
+.kanban-card.done .kanban-progress i, .kanban-card.complete .kanban-progress i { background: #10b981; }
+.kanban-count[data-done="true"] { color: #10b981 !important; }
+.kanban-column.dragging .kanban-card { opacity: .55; }
+.kanban-column.dragging .kanban-card[draggable] { opacity: .35; }
+.kanban-column.drag-over { border-color: #818cf8; background: rgba(238,242,255,.6); box-shadow: inset 0 0 0 2px rgba(99,102,241,.28); }
+.kanban-drop-hint { display: grid; min-height: 46px; margin: 0 10px 10px; place-items: center; border: 1.5px dashed #a5b4fc; border-radius: 6px; color: #6366f1; font-size: 11px; background: rgba(238,242,255,.35); }
+.dark .kanban-column.drag-over { border-color: #818cf8; background: rgba(49,46,129,.32); }
+.dark .kanban-card.complete { opacity: .6; }
+.dark .kanban-card.complete .kanban-card-title { color: #64748b; }
+.dark .kanban-card.complete p { color: #475569; }
+.dark .kanban-drop-hint { border-color: #818cf8; color: #a5b4fc; background: rgba(49,46,129,.24); }
 .kanban-card-title { overflow: hidden; color: #334155; font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .kanban-card p { display: -webkit-box; min-height: 32px; overflow: hidden; margin: 6px 0 9px; color: #94a3b8; font-size: 11px; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .kanban-card footer { display: flex; justify-content: space-between; color: #818cf8; font-size: 10px; }
@@ -430,6 +455,9 @@ body {
 .command-section > span { display: block; padding: 0 10px 7px; color: #94a3b8; font-size: 10px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
 .command-section button { display: flex; width: 100%; align-items: baseline; justify-content: space-between; gap: 12px; border: 0; border-radius: 5px; padding: 9px 10px; background: transparent; color: #334155; text-align: left; cursor: pointer; }
 .command-section button:hover { background: #eef2ff; color: #4338ca; }
+.command-section button.active { background: #eef2ff; color: #4338ca; }
+.dark .command-section button.active { background: #1e1b4b; color: #c7d2fe; }
+.command-section button.active b { color: #4338ca; }
 .command-section button b { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .command-section button small { max-width: 54%; overflow: hidden; color: #94a3b8; font-size: 11px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .command-section p { padding: 8px 10px; color: #94a3b8; font-size: 12px; }
